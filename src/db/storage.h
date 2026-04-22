@@ -18,6 +18,11 @@ typedef struct {
 int storage_insert(const char *table_name, const InsertStatement *stmt);
 
 /*
+ * 논리 테이블에 대응하는 CSV 파일이 존재하면 1, 아니면 0을 반환한다.
+ */
+int storage_table_exists(const char *table_name);
+
+/*
  * 테이블 CSV 파일에서 조건에 맞는 행을 삭제한다.
  * WHERE가 없으면 헤더를 제외한 모든 데이터 행을 삭제한다.
  * 성공 시 SUCCESS, 실패 시 FAILURE를 반환한다.

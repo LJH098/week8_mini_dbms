@@ -53,6 +53,8 @@ int main(void) {
     int row_count;
     char **row;
 
+    remove("data/runtime_users.csv");
+    remove("data/other_users.csv");
     table_runtime_cleanup();
 
     table = table_get_or_load("runtime_users");

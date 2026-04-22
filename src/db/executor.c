@@ -135,8 +135,8 @@ static void executor_print_border(const int *widths, int col_count) {
 /*
  * 표시 폭을 고려해 MySQL 스타일 표 형태로 조회 결과를 출력한다.
  */
-static void executor_print_table(char headers[][MAX_IDENTIFIER_LEN], int header_count,
-                                 char ***rows, int row_count) {
+static void executor_print_table(const char headers[][MAX_IDENTIFIER_LEN],
+                                 int header_count, char ***rows, int row_count) {
     int widths[MAX_COLUMNS];
     int i;
     int j;
@@ -387,33 +387,113 @@ static int executor_collect_rows_by_scan(const TableRuntime *table,
 }
 
 /*
- * INSERT 문 하나를 메모리 런타임 계층으로 실행하고 결과 메시지를 출력한다.
+ * SELECT 헤더를 DbResult에 복사한다.
  */
-static int executor_execute_insert(const InsertStatement *stmt) {
+static int executor_copy_headers_to_result(DbResult *result,
+                                           const char headers[][MAX_IDENTIFIER_LEN],
+                                           int header_count) {
+    int i;
+
+    if (result == NULL || headers == NULL || header_count < 0 ||
+        header_count > MAX_COLUMNS) {
+        return FAILURE;
+    }
+
+    result->column_count = header_count;
+    for (i = 0; i < header_count; i++) {
+        if (utils_safe_strcpy(result->columns[i], sizeof(result->columns[i]),
+                              headers[i]) != SUCCESS) {
+            return FAILURE;
+        }
+    }
+
+    return SUCCESS;
+}
+
+/*
+ * INSERT 성공 결과를 DbResult에 기록한다.
+ */
+static int executor_finish_insert(DbResult *result, const char *table_name) {
+    char message[MAX_DB_RESULT_MESSAGE_LEN];
+
+    if (result == NULL || table_name == NULL) {
+        return FAILURE;
+    }
+
+    result->type = DB_RESULT_INSERT;
+    result->success = 1;
+    result->rows_affected = 1;
+    result->used_id_index = 0;
+    snprintf(message, sizeof(message), "1 row inserted into %s.", table_name);
+    return db_result_set_message(result, message);
+}
+
+/*
+ * SELECT 성공 결과를 DbResult에 기록한다.
+ */
+static int executor_finish_select(DbResult *result,
+                                  char headers[][MAX_IDENTIFIER_LEN],
+                                  int selected_count,
+                                  char ***rows,
+                                  int row_count,
+                                  int used_id_index) {
+    char message[MAX_DB_RESULT_MESSAGE_LEN];
+
+    if (result == NULL) {
+        executor_free_result_rows(rows, row_count, selected_count);
+        return FAILURE;
+    }
+
+    if (executor_copy_headers_to_result(result, headers, selected_count) != SUCCESS) {
+        executor_free_result_rows(rows, row_count, selected_count);
+        return db_result_set_error(result, "Failed to prepare SELECT headers.");
+    }
+
+    result->type = DB_RESULT_SELECT;
+    result->success = 1;
+    result->rows = rows;
+    result->row_count = row_count;
+    result->rows_affected = row_count;
+    result->used_id_index = used_id_index;
+    snprintf(message, sizeof(message), "%d row%s selected.", row_count,
+             row_count == 1 ? "" : "s");
+    return db_result_set_message(result, message);
+}
+
+/*
+ * INSERT 문 하나를 메모리 런타임 계층으로 실행하고 결과를 채운다.
+ */
+static int executor_execute_insert(const InsertStatement *stmt, DbResult *result) {
     TableRuntime *table;
     int row_index;
+    char message[MAX_DB_RESULT_MESSAGE_LEN];
 
-    if (stmt == NULL) {
+    if (stmt == NULL || result == NULL) {
         return FAILURE;
     }
 
     table = table_get_or_load(stmt->table_name);
     if (table == NULL) {
-        return FAILURE;
+        return db_result_set_error(result, "Failed to prepare runtime table.");
+    }
+
+    if (table_load_from_storage_if_needed(table, stmt->table_name) != SUCCESS) {
+        return db_result_set_error(result, "Failed to load table from storage.");
     }
 
     if (table_insert_row(table, stmt, &row_index) != SUCCESS) {
-        return FAILURE;
+        snprintf(message, sizeof(message), "Failed to insert row into %s.",
+                 stmt->table_name);
+        return db_result_set_error(result, message);
     }
 
-    printf("1 row inserted into %s.\n", stmt->table_name);
-    return SUCCESS;
+    return executor_finish_insert(result, stmt->table_name);
 }
 
 /*
- * SELECT 문 하나를 메모리 런타임에서 실행하고 표 형태로 출력한다.
+ * SELECT 문 하나를 메모리 런타임에서 실행하고 결과를 채운다.
  */
-static int executor_execute_select(const SelectStatement *stmt) {
+static int executor_execute_select(const SelectStatement *stmt, DbResult *result) {
     TableRuntime *table;
     int selected_indices[MAX_COLUMNS];
     char headers[MAX_COLUMNS][MAX_IDENTIFIER_LEN];
@@ -422,29 +502,37 @@ static int executor_execute_select(const SelectStatement *stmt) {
     int result_row_count;
     int search_key;
     int status;
+    int used_id_index;
+    char message[MAX_DB_RESULT_MESSAGE_LEN];
 
-    if (stmt == NULL) {
+    if (stmt == NULL || result == NULL) {
         return FAILURE;
     }
 
     table = table_get_or_load(stmt->table_name);
     if (table == NULL) {
-        return FAILURE;
+        return db_result_set_error(result, "Failed to prepare runtime table.");
+    }
+
+    if (table_load_from_storage_if_needed(table, stmt->table_name) != SUCCESS) {
+        return db_result_set_error(result, "Failed to load table from storage.");
     }
 
     if (!table->loaded) {
-        fprintf(stderr, "Error: Table '%s' not found in runtime.\n", stmt->table_name);
-        return FAILURE;
+        snprintf(message, sizeof(message), "Table '%s' not found in runtime.",
+                 stmt->table_name);
+        return db_result_set_error(result, message);
     }
 
     status = executor_prepare_projection(stmt, table, selected_indices, headers,
                                          &selected_count);
     if (status != SUCCESS) {
-        return FAILURE;
+        return db_result_set_error(result, "Failed to prepare SELECT projection.");
     }
 
     result_rows = NULL;
     result_row_count = 0;
+    used_id_index = 0;
     if (!stmt->has_where) {
         status = executor_collect_all_rows(table, selected_indices, selected_count,
                                            &result_rows, &result_row_count);
@@ -452,6 +540,7 @@ static int executor_execute_select(const SelectStatement *stmt) {
         status = executor_collect_rows_by_id(table, search_key, selected_indices,
                                              selected_count, &result_rows,
                                              &result_row_count);
+        used_id_index = 1;
     } else {
         status = executor_collect_rows_by_scan(table, &stmt->where, selected_indices,
                                                selected_count, &result_rows,
@@ -460,43 +549,78 @@ static int executor_execute_select(const SelectStatement *stmt) {
 
     if (status != SUCCESS) {
         executor_free_result_rows(result_rows, result_row_count, selected_count);
-        return FAILURE;
+        return db_result_set_error(result, "Failed to collect SELECT rows.");
     }
 
-    executor_print_table(headers, selected_count, result_rows, result_row_count);
-    printf("%d row%s selected.\n", result_row_count,
-           result_row_count == 1 ? "" : "s");
-
-    executor_free_result_rows(result_rows, result_row_count, selected_count);
-    return SUCCESS;
+    return executor_finish_select(result, headers, selected_count, result_rows,
+                                  result_row_count, used_id_index);
 }
 
 /*
  * DELETE는 이번 메모리 런타임 범위에서 지원하지 않는다.
  */
-static int executor_execute_delete(const DeleteStatement *stmt) {
+static int executor_execute_delete(const DeleteStatement *stmt, DbResult *result) {
     (void)stmt;
-    fprintf(stderr, "Error: DELETE is not supported in memory runtime mode.\n");
-    return FAILURE;
+    return db_result_set_error(result, "DELETE is not supported in memory runtime mode.");
 }
 
-/*
- * 파싱된 SQL 문을 받아 statement.type에 따라 INSERT, SELECT, DELETE로 분기한다.
- */
-int executor_execute(const SqlStatement *statement) {
-    if (statement == NULL) {
+int executor_execute_into_result(const SqlStatement *statement, DbResult *out_result) {
+    if (statement == NULL || out_result == NULL) {
         return FAILURE;
     }
 
     switch (statement->type) {
         case SQL_INSERT:
-            return executor_execute_insert(&statement->insert);
+            return executor_execute_insert(&statement->insert, out_result);
         case SQL_SELECT:
-            return executor_execute_select(&statement->select);
+            return executor_execute_select(&statement->select, out_result);
         case SQL_DELETE:
-            return executor_execute_delete(&statement->delete_stmt);
+            return executor_execute_delete(&statement->delete_stmt, out_result);
         default:
-            fprintf(stderr, "Error: Unsupported SQL statement type.\n");
-            return FAILURE;
+            return db_result_set_error(out_result, "Unsupported SQL statement type.");
     }
+}
+
+void executor_render_result_for_cli(const DbResult *result) {
+    if (result == NULL) {
+        return;
+    }
+
+    if (!result->success) {
+        if (result->message[0] != '\0') {
+            fprintf(stderr, "Error: %s\n", result->message);
+        }
+        return;
+    }
+
+    switch (result->type) {
+        case DB_RESULT_INSERT:
+            if (result->message[0] != '\0') {
+                puts(result->message);
+            }
+            break;
+        case DB_RESULT_SELECT:
+            executor_print_table(result->columns, result->column_count,
+                                 result->rows, result->row_count);
+            if (result->message[0] != '\0') {
+                puts(result->message);
+            }
+            break;
+        default:
+            if (result->message[0] != '\0') {
+                puts(result->message);
+            }
+            break;
+    }
+}
+
+int executor_execute(const SqlStatement *statement) {
+    DbResult result;
+    int status;
+
+    db_result_init(&result);
+    status = executor_execute_into_result(statement, &result);
+    executor_render_result_for_cli(&result);
+    db_result_free(&result);
+    return status;
 }

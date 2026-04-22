@@ -1,8 +1,6 @@
 #include "benchmark.h"
+#include "db_engine_facade.h"
 #include "executor.h"
-#include "parser.h"
-#include "table_runtime.h"
-#include "tokenizer.h"
 #include "utils.h"
 
 #include <ctype.h>
@@ -22,17 +20,15 @@ static size_t main_skip_whitespace(const char *text, size_t index) {
 }
 
 /*
- * 완전한 SQL 문 하나를 파싱하고 실행한다.
+ * 완전한 SQL 문 하나를 facade 경로로 실행한다.
  * 빈 문장이거나 정상 실행되면 SUCCESS를 반환한다.
  */
-static int main_process_sql_statement(const char *sql) {
-    Token *tokens;
-    int token_count;
-    SqlStatement statement;
+static int main_process_sql_statement(DbEngine *engine, const char *sql) {
+    DbResult result;
     char *working_sql;
     int status;
 
-    if (sql == NULL) {
+    if (engine == NULL || sql == NULL) {
         return FAILURE;
     }
 
@@ -47,19 +43,10 @@ static int main_process_sql_statement(const char *sql) {
         return SUCCESS;
     }
 
-    tokens = tokenizer_tokenize(working_sql, &token_count);
-    if (tokens == NULL || token_count == 0) {
-        free(tokens);
-        free(working_sql);
-        return FAILURE;
-    }
-
-    status = parser_parse(tokens, token_count, &statement);
-    if (status == SUCCESS) {
-        status = executor_execute(&statement);
-    }
-
-    free(tokens);
+    db_result_init(&result);
+    status = db_execute_sql(engine, working_sql, &result);
+    executor_render_result_for_cli(&result);
+    db_result_free(&result);
     free(working_sql);
     return status;
 }
@@ -68,12 +55,16 @@ static int main_process_sql_statement(const char *sql) {
  * `.sql` 파일을 읽어 세미콜론 기준으로 문장을 나눈 뒤 순서대로 실행한다.
  * 파일 읽기나 내부 메모리 할당에 실패하지 않으면 SUCCESS를 반환한다.
  */
-static int main_run_file_mode(const char *path) {
+static int main_run_file_mode(DbEngine *engine, const char *path) {
     char *content;
     size_t start;
     int terminator_index;
     char *statement;
     char *remaining;
+
+    if (engine == NULL || path == NULL) {
+        return FAILURE;
+    }
 
     content = utils_read_file(path);
     if (content == NULL) {
@@ -109,7 +100,7 @@ static int main_run_file_mode(const char *path) {
             return FAILURE;
         }
 
-        main_process_sql_statement(statement);
+        main_process_sql_statement(engine, statement);
         free(statement);
         start = (size_t)terminator_index + 1;
     }
@@ -168,13 +159,17 @@ static int main_replace_buffer_with_remainder(char **buffer, size_t *length,
  * 사용자가 종료하거나 EOF가 올 때까지 대화형 SQL 셸을 실행한다.
  * 정상 종료면 SUCCESS, 메모리 할당 실패면 FAILURE를 반환한다.
  */
-static int main_run_repl_mode(void) {
+static int main_run_repl_mode(DbEngine *engine) {
     char line[MAX_SQL_LENGTH];
     char *buffer;
     size_t buffer_length;
     size_t buffer_capacity;
     int terminator_index;
     char *statement;
+
+    if (engine == NULL) {
+        return FAILURE;
+    }
 
     buffer = NULL;
     buffer_length = 0;
@@ -209,7 +204,7 @@ static int main_run_repl_mode(void) {
                 return FAILURE;
             }
 
-            main_process_sql_statement(statement);
+            main_process_sql_statement(engine, statement);
             free(statement);
 
             if (main_replace_buffer_with_remainder(&buffer, &buffer_length,
@@ -234,10 +229,11 @@ static int main_run_repl_mode(void) {
 }
 
 /*
- * argv에 따라 파일 모드 또는 REPL 모드를 선택하고 종료 전에 파서 캐시를 정리한다.
+ * argv에 따라 파일 모드 또는 REPL 모드를 선택하고 종료 전에 엔진 자원을 정리한다.
  * 정상 종료면 EXIT_SUCCESS, 아니면 EXIT_FAILURE를 반환한다.
  */
 int main(int argc, char *argv[]) {
+    DbEngine engine;
     int status;
 
     if (argc > 2) {
@@ -250,13 +246,20 @@ int main(int argc, char *argv[]) {
          utils_equals_ignore_case(argv[1], "benchmark"))) {
         BenchmarkConfig config = benchmark_default_config();
         status = benchmark_run(&config);
-    } else if (argc == 2) {
-        status = main_run_file_mode(argv[1]);
-    } else {
-        status = main_run_repl_mode();
+        return status == SUCCESS ? EXIT_SUCCESS : EXIT_FAILURE;
     }
 
-    table_runtime_cleanup();
-    tokenizer_cleanup_cache();
+    if (db_engine_init(&engine) != SUCCESS) {
+        fprintf(stderr, "Error: Failed to initialize DB engine.\n");
+        return EXIT_FAILURE;
+    }
+
+    if (argc == 2) {
+        status = main_run_file_mode(&engine, argv[1]);
+    } else {
+        status = main_run_repl_mode(&engine);
+    }
+
+    db_engine_shutdown(&engine);
     return status == SUCCESS ? EXIT_SUCCESS : EXIT_FAILURE;
 }

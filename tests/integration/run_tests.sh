@@ -45,7 +45,9 @@ run_sql_test() {
 
 for binary in build/tests/db/test_tokenizer build/tests/db/test_parser \
               build/tests/db/test_storage build/tests/db/test_benchmark build/tests/db/test_table_runtime \
-              build/tests/db/test_bptree build/tests/db/test_executor
+              build/tests/db/test_bptree build/tests/db/test_executor build/tests/db/test_db_engine_facade \
+              build/tests/db/test_table_storage_loading \
+              build/tests/concurrency/test_thread_pool build/tests/concurrency/test_tokenizer_cache_threads
 do
     run_unit_test "$binary"
 done
@@ -57,6 +59,33 @@ run_sql_test "WHERE equals" "tests/integration/test_cases/select_where.sql" "Bob
 run_sql_test "Edge cases" "tests/integration/test_cases/edge_cases.sql" "Lee, Jr."
 run_sql_test "Explicit id rejected" "tests/integration/test_cases/duplicate_primary_key.sql" "Explicit id values are not allowed"
 run_sql_test "Delete unsupported" "tests/integration/test_cases/delete_where.sql" "DELETE is not supported in memory runtime mode"
+
+if bash tests/api/test_api_smoke.sh >/tmp/week8_api_test.log 2>&1; then
+    echo "[PASS] api_smoke"
+    PASS=$((PASS + 1))
+else
+    echo "[FAIL] api_smoke"
+    cat /tmp/week8_api_test.log
+    FAIL=$((FAIL + 1))
+fi
+
+if bash tests/api/test_api_concurrency_smoke.sh >/tmp/week8_api_concurrency_test.log 2>&1; then
+    echo "[PASS] api_concurrency_smoke"
+    PASS=$((PASS + 1))
+else
+    echo "[FAIL] api_concurrency_smoke"
+    cat /tmp/week8_api_concurrency_test.log
+    FAIL=$((FAIL + 1))
+fi
+
+if bash tests/api/test_api_parallel_select_smoke.sh >/tmp/week8_api_parallel_test.log 2>&1; then
+    echo "[PASS] api_parallel_select_smoke"
+    PASS=$((PASS + 1))
+else
+    echo "[FAIL] api_parallel_select_smoke"
+    cat /tmp/week8_api_parallel_test.log
+    FAIL=$((FAIL + 1))
+fi
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

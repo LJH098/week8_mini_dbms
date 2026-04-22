@@ -5,7 +5,8 @@ CFLAGS = -Wall -Wextra -std=c99 -g \
 	-Isrc/concurrency \
 	-Isrc/db \
 	-Isrc/common \
-	-Isrc/cli
+	-Isrc/cli \
+	-pthread
 DEPFLAGS = -MMD -MP
 SRC_DIR = src
 TEST_DIR = tests
