@@ -59,6 +59,15 @@ run_sql_test "Edge cases" "tests/integration/test_cases/edge_cases.sql" "Lee, Jr
 run_sql_test "Explicit id rejected" "tests/integration/test_cases/duplicate_primary_key.sql" "Explicit id values are not allowed"
 run_sql_test "Delete unsupported" "tests/integration/test_cases/delete_where.sql" "DELETE is not supported in memory runtime mode"
 
+if bash tests/api/test_api_smoke.sh >/tmp/week8_api_test.log 2>&1; then
+    echo "[PASS] api_smoke"
+    PASS=$((PASS + 1))
+else
+    echo "[FAIL] api_smoke"
+    cat /tmp/week8_api_test.log
+    FAIL=$((FAIL + 1))
+fi
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 
