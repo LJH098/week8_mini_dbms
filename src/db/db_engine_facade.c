@@ -1,12 +1,15 @@
 #include "db_engine_facade.h"
 
+#include "lock_manager.h"
 #include "executor.h"
 #include "parser.h"
 #include "table_runtime.h"
 #include "tokenizer.h"
 #include "utils.h"
 
+#include <ctype.h>
 #include <stdlib.h>
+#include <strings.h>
 
 /*
  * facade 공통 실패 경로에서 DbResult에 에러 메시지를 채운다.
@@ -18,8 +21,24 @@ static int db_engine_fail(DbResult *out_result, const char *message) {
     return FAILURE;
 }
 
+static QueryLockMode db_engine_detect_query_lock_mode(const char *sql) {
+    while (sql != NULL && *sql != '\0' && isspace((unsigned char)*sql)) {
+        sql++;
+    }
+
+    if (sql != NULL && strncasecmp(sql, "SELECT", 6) == 0) {
+        return QUERY_LOCK_READ;
+    }
+
+    return QUERY_LOCK_WRITE;
+}
+
 int db_engine_init(DbEngine *engine) {
     if (engine == NULL) {
+        return FAILURE;
+    }
+
+    if (init_lock_manager(LOCK_POLICY_GLOBAL_MUTEX) != SUCCESS) {
         return FAILURE;
     }
 
@@ -28,7 +47,21 @@ int db_engine_init(DbEngine *engine) {
 }
 
 int execute_query_with_lock(DbEngine *engine, const char *sql, DbResult *out_result) {
-    return db_execute_sql(engine, sql, out_result);
+    QueryLockMode lock_mode;
+    int status;
+
+    if (engine == NULL || sql == NULL || out_result == NULL) {
+        return FAILURE;
+    }
+
+    lock_mode = db_engine_detect_query_lock_mode(sql);
+    if (lock_db_for_query(lock_mode) != SUCCESS) {
+        return db_engine_fail(out_result, "Failed to acquire DB lock.");
+    }
+
+    status = db_execute_sql(engine, sql, out_result);
+    unlock_db_for_query(lock_mode);
+    return status;
 }
 
 int db_execute_sql(DbEngine *engine, const char *sql, DbResult *out_result) {
@@ -89,6 +122,7 @@ int db_execute_sql(DbEngine *engine, const char *sql, DbResult *out_result) {
 void db_engine_shutdown(DbEngine *engine) {
     table_runtime_cleanup();
     tokenizer_cleanup_cache();
+    destroy_lock_manager();
 
     if (engine == NULL) {
         return;

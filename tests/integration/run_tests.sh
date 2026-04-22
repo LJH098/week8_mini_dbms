@@ -69,6 +69,15 @@ else
     FAIL=$((FAIL + 1))
 fi
 
+if bash tests/api/test_api_concurrency_smoke.sh >/tmp/week8_api_concurrency_test.log 2>&1; then
+    echo "[PASS] api_concurrency_smoke"
+    PASS=$((PASS + 1))
+else
+    echo "[FAIL] api_concurrency_smoke"
+    cat /tmp/week8_api_concurrency_test.log
+    FAIL=$((FAIL + 1))
+fi
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 
