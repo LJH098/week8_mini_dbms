@@ -1,0 +1,11 @@
+/build/
+/sql_processor
+/data/*.csv
+.vscode
+
+# gemini-cli settings
+.gemini/
+
+# GitHub App credentials
+gha-creds-*.json
+.DS_Store

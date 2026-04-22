@@ -1,0 +1,4 @@
+build
+sql_processor
+data/*.csv
+.git
