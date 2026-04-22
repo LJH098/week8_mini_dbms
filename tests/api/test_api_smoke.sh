@@ -60,6 +60,12 @@ if ! echo "$health_response" | grep -q '"busy_workers":'; then
     exit 1
 fi
 
+if ! echo "$health_response" | grep -q '"busy_workers":0'; then
+    echo "[FAIL] api health fast path busy worker snapshot"
+    echo "$health_response"
+    exit 1
+fi
+
 if ! echo "$health_response" | grep -q '"idle_workers":'; then
     echo "[FAIL] api health idle workers"
     echo "$health_response"

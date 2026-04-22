@@ -25,6 +25,34 @@ typedef struct {
     RequestRouterContext router_context;
 } ApiServerHandlerContext;
 
+static int api_server_is_health_fast_path_request(int client_fd) {
+    char peek_buffer[256];
+    char *line_end;
+    char method[MAX_HTTP_METHOD_LEN];
+    char path[MAX_HTTP_PATH_LEN];
+    char protocol[MAX_HTTP_PROTOCOL_LEN];
+    ssize_t bytes_read;
+
+    bytes_read = recv(client_fd, peek_buffer, sizeof(peek_buffer) - 1, MSG_PEEK);
+    if (bytes_read <= 0) {
+        return 0;
+    }
+
+    peek_buffer[bytes_read] = '\0';
+    line_end = strstr(peek_buffer, "\r\n");
+    if (line_end == NULL) {
+        return 0;
+    }
+    *line_end = '\0';
+
+    if (sscanf(peek_buffer, "%7s %127s %15s", method, path, protocol) != 3) {
+        return 0;
+    }
+
+    return utils_equals_ignore_case(method, "GET") &&
+           strcmp(path, "/health") == 0;
+}
+
 static int api_server_append_bytes(char **buffer, size_t *length, size_t *capacity,
                                    const char *chunk, size_t chunk_length) {
     char *new_buffer;
@@ -348,6 +376,12 @@ int api_server_run(DbEngine *engine, const ApiServerConfig *config) {
             close(server_fd);
             thread_pool_shutdown(&pool);
             return FAILURE;
+        }
+
+        if (api_server_is_health_fast_path_request(client_fd)) {
+            api_server_handle_client(client_fd, &handler_context.router_context);
+            close(client_fd);
+            continue;
         }
 
         if (thread_pool_submit(&pool, client_fd) != SUCCESS) {
