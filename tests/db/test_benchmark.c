@@ -14,6 +14,8 @@ static int assert_true(int condition, const char *message) {
 int main(void) {
     BenchmarkConfig config;
 
+    remove("data/benchmark_users.csv");
+
     config.row_count = 128;
     config.query_count = 32;
 

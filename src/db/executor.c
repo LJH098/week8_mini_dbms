@@ -477,6 +477,10 @@ static int executor_execute_insert(const InsertStatement *stmt, DbResult *result
         return db_result_set_error(result, "Failed to prepare runtime table.");
     }
 
+    if (table_load_from_storage_if_needed(table, stmt->table_name) != SUCCESS) {
+        return db_result_set_error(result, "Failed to load table from storage.");
+    }
+
     if (table_insert_row(table, stmt, &row_index) != SUCCESS) {
         snprintf(message, sizeof(message), "Failed to insert row into %s.",
                  stmt->table_name);
@@ -508,6 +512,10 @@ static int executor_execute_select(const SelectStatement *stmt, DbResult *result
     table = table_get_or_load(stmt->table_name);
     if (table == NULL) {
         return db_result_set_error(result, "Failed to prepare runtime table.");
+    }
+
+    if (table_load_from_storage_if_needed(table, stmt->table_name) != SUCCESS) {
+        return db_result_set_error(result, "Failed to load table from storage.");
     }
 
     if (!table->loaded) {

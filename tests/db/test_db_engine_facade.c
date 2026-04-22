@@ -18,6 +18,7 @@ int main(void) {
     DbEngine engine;
     DbResult result;
 
+    remove("data/facade_users.csv");
     if (assert_true(db_engine_init(&engine) == SUCCESS,
                     "db_engine_init should succeed") != SUCCESS) {
         return EXIT_FAILURE;

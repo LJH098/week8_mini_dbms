@@ -79,6 +79,7 @@ int main(void) {
     char **row;
     int row_index;
 
+    remove("data/executor_users.csv");
     table_runtime_cleanup();
 
     prepare_insert(&statement, "executor_users", 0, "", "Alice", "30");

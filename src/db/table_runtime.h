@@ -2,6 +2,7 @@
 #define TABLE_RUNTIME_H
 
 #include "parser.h"
+#include "storage.h"
 
 struct BPTreeNode;
 
@@ -38,6 +39,11 @@ int table_reserve_if_needed(TableRuntime *table);
  * 반환된 포인터는 모듈 내부 정적 저장소를 가리킨다.
  */
 TableRuntime *table_get_or_load(const char *table_name);
+
+/*
+ * 활성 테이블이 아직 메모리에 없다면 storage에서 읽어 런타임에 적재한다.
+ */
+int table_load_from_storage_if_needed(TableRuntime *table, const char *table_name);
 
 /*
  * INSERT 문 기준으로 auto id를 붙여 메모리 행을 추가한다.

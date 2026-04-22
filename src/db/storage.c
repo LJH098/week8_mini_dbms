@@ -1119,6 +1119,28 @@ int storage_insert(const char *table_name, const InsertStatement *stmt) {
 }
 
 /*
+ * 테이블 CSV 파일이 실제로 존재하는지 확인한다.
+ */
+int storage_table_exists(const char *table_name) {
+    char path[MAX_PATH_LEN];
+    struct stat info;
+
+    if (table_name == NULL) {
+        return 0;
+    }
+
+    if (storage_build_path(table_name, path, sizeof(path)) != SUCCESS) {
+        return 0;
+    }
+
+    if (stat(path, &info) != 0) {
+        return 0;
+    }
+
+    return S_ISREG(info.st_mode) ? 1 : 0;
+}
+
+/*
  * 테이블을 읽어 행 데이터 배열만 반환한다.
  * 반환된 행 배열은 호출자가 storage_free_rows()로 해제해야 한다.
  */

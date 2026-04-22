@@ -45,7 +45,8 @@ run_sql_test() {
 
 for binary in build/tests/db/test_tokenizer build/tests/db/test_parser \
               build/tests/db/test_storage build/tests/db/test_benchmark build/tests/db/test_table_runtime \
-              build/tests/db/test_bptree build/tests/db/test_executor build/tests/db/test_db_engine_facade
+              build/tests/db/test_bptree build/tests/db/test_executor build/tests/db/test_db_engine_facade \
+              build/tests/db/test_table_storage_loading
 do
     run_unit_test "$binary"
 done
