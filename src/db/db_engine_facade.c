@@ -21,12 +21,42 @@ static int db_engine_fail(DbResult *out_result, const char *message) {
     return FAILURE;
 }
 
-static QueryLockMode db_engine_detect_query_lock_mode(const char *sql) {
-    while (sql != NULL && *sql != '\0' && isspace((unsigned char)*sql)) {
-        sql++;
+static int db_engine_parse_statement(const char *sql, SqlStatement *out_statement) {
+    Token *tokens;
+    int token_count;
+    char *working_sql;
+    int status;
+
+    if (sql == NULL || out_statement == NULL) {
+        return FAILURE;
     }
 
-    if (sql != NULL && strncasecmp(sql, "SELECT", 6) == 0) {
+    working_sql = utils_strdup(sql);
+    if (working_sql == NULL) {
+        return FAILURE;
+    }
+
+    utils_trim(working_sql);
+    if (working_sql[0] == '\0') {
+        free(working_sql);
+        return FAILURE;
+    }
+
+    tokens = tokenizer_tokenize(working_sql, &token_count);
+    if (tokens == NULL || token_count == 0) {
+        free(tokens);
+        free(working_sql);
+        return FAILURE;
+    }
+
+    status = parser_parse(tokens, token_count, out_statement);
+    free(tokens);
+    free(working_sql);
+    return status;
+}
+
+static QueryLockMode db_engine_choose_initial_lock_mode(const SqlStatement *statement) {
+    if (statement != NULL && statement->type == SQL_SELECT) {
         return QUERY_LOCK_READ;
     }
 
@@ -38,7 +68,7 @@ int db_engine_init(DbEngine *engine) {
         return FAILURE;
     }
 
-    if (init_lock_manager(LOCK_POLICY_GLOBAL_MUTEX) != SUCCESS) {
+    if (init_lock_manager(LOCK_POLICY_SPLIT_RWLOCK) != SUCCESS) {
         return FAILURE;
     }
 
@@ -47,16 +77,32 @@ int db_engine_init(DbEngine *engine) {
 }
 
 int execute_query_with_lock(DbEngine *engine, const char *sql, DbResult *out_result) {
+    SqlStatement statement;
     QueryLockMode lock_mode;
+    int parsed_for_locking;
     int status;
 
     if (engine == NULL || sql == NULL || out_result == NULL) {
         return FAILURE;
     }
 
-    lock_mode = db_engine_detect_query_lock_mode(sql);
+    parsed_for_locking = db_engine_parse_statement(sql, &statement) == SUCCESS;
+    lock_mode = db_engine_choose_initial_lock_mode(parsed_for_locking ? &statement : NULL);
     if (lock_db_for_query(lock_mode) != SUCCESS) {
         return db_engine_fail(out_result, "Failed to acquire DB lock.");
+    }
+
+    /*
+     * 단일 활성 테이블 구조에서는 아직 적재되지 않은 SELECT가
+     * 런타임 상태를 바꾸므로 write lock으로 승격해 직렬화한다.
+     */
+    if (parsed_for_locking && lock_mode == QUERY_LOCK_READ &&
+        !table_runtime_is_loaded_for(statement.select.table_name)) {
+        unlock_db_for_query(lock_mode);
+        lock_mode = QUERY_LOCK_WRITE;
+        if (lock_db_for_query(lock_mode) != SUCCESS) {
+            return db_engine_fail(out_result, "Failed to upgrade DB lock.");
+        }
     }
 
     status = db_execute_sql(engine, sql, out_result);

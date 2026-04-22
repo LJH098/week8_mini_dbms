@@ -1,5 +1,7 @@
 #include "tokenizer.h"
 
+#include "lock_manager.h"
+
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -93,6 +95,7 @@ static Token *tokenizer_lookup_cache(const char *sql, int *token_count) {
         return NULL;
     }
 
+    lock_tokenizer_cache();
     previous = NULL;
     entry = tokenizer_cache_head;
     while (entry != NULL) {
@@ -105,11 +108,13 @@ static Token *tokenizer_lookup_cache(const char *sql, int *token_count) {
 
             copy = tokenizer_clone_tokens(entry->tokens, entry->token_count);
             if (copy == NULL) {
+                unlock_tokenizer_cache();
                 return NULL;
             }
 
             *token_count = entry->token_count;
             tokenizer_cache_hit_count++;
+            unlock_tokenizer_cache();
             return copy;
         }
 
@@ -117,6 +122,7 @@ static Token *tokenizer_lookup_cache(const char *sql, int *token_count) {
         entry = entry->next;
     }
 
+    unlock_tokenizer_cache();
     return NULL;
 }
 
@@ -151,6 +157,7 @@ static int tokenizer_store_cache(const char *sql, const Token *tokens,
         return FAILURE;
     }
 
+    lock_tokenizer_cache();
     entry->token_count = token_count;
     entry->next = tokenizer_cache_head;
     tokenizer_cache_head = entry;
@@ -160,6 +167,7 @@ static int tokenizer_store_cache(const char *sql, const Token *tokens,
         tokenizer_evict_oldest_cache_entry();
     }
 
+    unlock_tokenizer_cache();
     return SUCCESS;
 }
 
@@ -529,6 +537,7 @@ void tokenizer_cleanup_cache(void) {
     SoftParserCacheEntry *entry;
     SoftParserCacheEntry *next;
 
+    lock_tokenizer_cache();
     entry = tokenizer_cache_head;
     while (entry != NULL) {
         next = entry->next;
@@ -539,20 +548,31 @@ void tokenizer_cleanup_cache(void) {
     tokenizer_cache_head = NULL;
     tokenizer_cache_entry_count = 0;
     tokenizer_cache_hit_count = 0;
+    unlock_tokenizer_cache();
 }
 
 /*
  * 현재 파서 캐시에 저장된 SQL 문 개수를 반환한다.
  */
 int tokenizer_get_cache_entry_count(void) {
-    return tokenizer_cache_entry_count;
+    int count;
+
+    lock_tokenizer_cache();
+    count = tokenizer_cache_entry_count;
+    unlock_tokenizer_cache();
+    return count;
 }
 
 /*
  * 마지막 캐시 정리 이후 발생한 파서 캐시 히트 수를 반환한다.
  */
 int tokenizer_get_cache_hit_count(void) {
-    return tokenizer_cache_hit_count;
+    int hit_count;
+
+    lock_tokenizer_cache();
+    hit_count = tokenizer_cache_hit_count;
+    unlock_tokenizer_cache();
+    return hit_count;
 }
 
 /*

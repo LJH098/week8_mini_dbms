@@ -46,6 +46,12 @@ TableRuntime *table_get_or_load(const char *table_name);
 int table_load_from_storage_if_needed(TableRuntime *table, const char *table_name);
 
 /*
+ * 현재 활성 런타임이 주어진 테이블을 이미 메모리에 적재했는지 확인한다.
+ * 이 함수는 DB 락을 잡은 상태에서 호출하는 것을 전제로 한다.
+ */
+int table_runtime_is_loaded_for(const char *table_name);
+
+/*
  * INSERT 문 기준으로 auto id를 붙여 메모리 행을 추가한다.
  * 성공 시 새 row_index를 out_row_index에 저장한다.
  */

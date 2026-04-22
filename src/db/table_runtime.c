@@ -452,6 +452,19 @@ int table_load_from_storage_if_needed(TableRuntime *table, const char *table_nam
     return SUCCESS;
 }
 
+int table_runtime_is_loaded_for(const char *table_name) {
+    if (table_name == NULL || !table_runtime_has_active) {
+        return 0;
+    }
+
+    if (!table_runtime_active.loaded) {
+        return 0;
+    }
+
+    return table_runtime_active.table_name[0] != '\0' &&
+           utils_equals_ignore_case(table_runtime_active.table_name, table_name);
+}
+
 int table_insert_row(TableRuntime *table, const InsertStatement *stmt,
                      int *out_row_index) {
     char **row;
