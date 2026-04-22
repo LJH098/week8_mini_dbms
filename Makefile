@@ -1,43 +1,52 @@
 CC = gcc
-CFLAGS = -Wall -Wextra -std=c99 -g -Isrc
+CFLAGS = -Wall -Wextra -std=c99 -g \
+	-Isrc \
+	-Isrc/api \
+	-Isrc/concurrency \
+	-Isrc/db \
+	-Isrc/common \
+	-Isrc/cli
 DEPFLAGS = -MMD -MP
 SRC_DIR = src
 TEST_DIR = tests
 BUILD_DIR = build
-TARGET = sql_processor
-TEST_BIN_DIR = $(BUILD_DIR)/tests
+CLI_TARGET = sql_processor
+API_TARGET = api_server
 
-MAIN_SRCS = $(filter-out $(SRC_DIR)/main.c,$(wildcard $(SRC_DIR)/*.c))
-SRCS = $(wildcard $(SRC_DIR)/*.c)
-HEADERS = $(wildcard $(SRC_DIR)/*.h)
-OBJS = $(SRCS:$(SRC_DIR)/%.c=$(BUILD_DIR)/%.o)
-DEPS = $(OBJS:.o=.d)
-CORE_OBJS = $(MAIN_SRCS:$(SRC_DIR)/%.c=$(BUILD_DIR)/%.o)
-TEST_SRCS = $(wildcard $(TEST_DIR)/test_*.c)
-TEST_BINS = $(TEST_SRCS:$(TEST_DIR)/%.c=$(TEST_BIN_DIR)/%)
+SRC_FILES = $(shell find $(SRC_DIR) -name '*.c' -print | sort)
+HEADERS = $(shell find $(SRC_DIR) -name '*.h' -print | sort)
+CLI_ENTRY = $(SRC_DIR)/cli/main.c
+API_ENTRY = $(SRC_DIR)/api/api_main.c
+CORE_SRCS = $(filter-out $(CLI_ENTRY) $(API_ENTRY),$(SRC_FILES))
+CORE_OBJS = $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/%.o,$(CORE_SRCS))
+CLI_OBJ = $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/%.o,$(CLI_ENTRY))
+API_OBJ = $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/%.o,$(API_ENTRY))
+ALL_OBJS = $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/%.o,$(SRC_FILES))
+DEPS = $(ALL_OBJS:.o=.d)
+TEST_SRCS = $(shell find $(TEST_DIR) -name 'test_*.c' -print | sort)
+TEST_BINS = $(patsubst $(TEST_DIR)/%.c,$(BUILD_DIR)/tests/%,$(TEST_SRCS))
 
-all: $(TARGET)
+all: $(CLI_TARGET) $(API_TARGET)
 
-$(TARGET): $(OBJS)
+$(CLI_TARGET): $(CORE_OBJS) $(CLI_OBJ)
 	$(CC) $(CFLAGS) -o $@ $^
 
-$(BUILD_DIR)/%.o: $(SRC_DIR)/%.c | $(BUILD_DIR)
+$(API_TARGET): $(CORE_OBJS) $(API_OBJ)
+	$(CC) $(CFLAGS) -o $@ $^
+
+$(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
+	mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $(DEPFLAGS) -c $< -o $@
 
-$(TEST_BIN_DIR)/%: $(TEST_DIR)/%.c $(CORE_OBJS) $(HEADERS) | $(TEST_BIN_DIR)
+$(BUILD_DIR)/tests/%: $(TEST_DIR)/%.c $(CORE_OBJS) $(HEADERS)
+	mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -o $@ $< $(CORE_OBJS)
 
-$(BUILD_DIR):
-	mkdir -p $(BUILD_DIR)
-
-$(TEST_BIN_DIR):
-	mkdir -p $(TEST_BIN_DIR)
-
-tests: $(TARGET) $(TEST_BINS)
-	bash $(TEST_DIR)/run_tests.sh
+tests: $(CLI_TARGET) $(API_TARGET) $(TEST_BINS)
+	bash $(TEST_DIR)/integration/run_tests.sh
 
 clean:
-	rm -rf $(BUILD_DIR) $(TARGET) data/*.csv
+	rm -rf $(BUILD_DIR) $(CLI_TARGET) $(API_TARGET) data/*.csv
 
 .PHONY: all tests clean
 

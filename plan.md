@@ -2002,4 +2002,4 @@ MVP에서 lock 범위는 아래로 잡는다.
 - 함수 책임과 호출 흐름도 이 문서 기준으로 맞춘다.
 - TODO는 더 이상 메모가 아니라 이미 반영된 정책이다.
 
-이제 구현자는 [API_SERVER_DESIGN.md](/Users/jinhyuk/krafton/week7_index/docs/API_SERVER_DESIGN.md:1)를 배경 설명으로 참고할 수는 있지만, 실제 구현 기준은 이 `plan.md`를 따라가면 된다.
+이제 구현자는 [API_SERVER_DESIGN.md](/Users/jinhyuk/krafton/project/week8_mini_dbms/docs/API_SERVER_DESIGN.md)를 배경 설명으로 참고할 수는 있지만, 실제 구현 기준은 이 `plan.md`를 따라가면 된다.
