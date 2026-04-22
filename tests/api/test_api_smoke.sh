@@ -36,8 +36,38 @@ if ! echo "$health_response" | grep -q 'HTTP/1.1 200 OK'; then
     exit 1
 fi
 
-if ! echo "$health_response" | grep -q '{"status":"ok"}'; then
+if ! echo "$health_response" | grep -q '"status":"ok"'; then
     echo "[FAIL] api health body"
+    echo "$health_response"
+    exit 1
+fi
+
+if ! echo "$health_response" | grep -q '"worker_count":4'; then
+    echo "[FAIL] api health worker count"
+    echo "$health_response"
+    exit 1
+fi
+
+if ! echo "$health_response" | grep -q '"queue_capacity":16'; then
+    echo "[FAIL] api health queue capacity"
+    echo "$health_response"
+    exit 1
+fi
+
+if ! echo "$health_response" | grep -q '"busy_workers":'; then
+    echo "[FAIL] api health busy workers"
+    echo "$health_response"
+    exit 1
+fi
+
+if ! echo "$health_response" | grep -q '"idle_workers":'; then
+    echo "[FAIL] api health idle workers"
+    echo "$health_response"
+    exit 1
+fi
+
+if ! echo "$health_response" | grep -q '"queue_length":'; then
+    echo "[FAIL] api health queue length"
     echo "$health_response"
     exit 1
 fi

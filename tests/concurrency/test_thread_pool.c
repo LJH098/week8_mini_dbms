@@ -54,6 +54,7 @@ static int wait_for_count(HandlerState *state, int expected_count) {
 int main(void) {
     HandlerState state;
     ThreadPool pool;
+    ThreadPoolStats stats;
 
     pthread_mutex_init(&state.mutex, NULL);
     state.handled_count = 0;
@@ -61,6 +62,23 @@ int main(void) {
 
     if (assert_true(thread_pool_init(&pool, 2, 8, test_handler, &state) == SUCCESS,
                     "thread_pool_init should create workers") != SUCCESS) {
+        pthread_mutex_destroy(&state.mutex);
+        return EXIT_FAILURE;
+    }
+
+    if (assert_true(thread_pool_get_stats(&pool, &stats) == SUCCESS,
+                    "thread_pool_get_stats should succeed after initialization") != SUCCESS ||
+        assert_true(stats.worker_count == 2,
+                    "thread pool should report configured worker count") != SUCCESS ||
+        assert_true(stats.busy_worker_count == 0,
+                    "new thread pool should start with zero busy workers") != SUCCESS ||
+        assert_true(stats.idle_worker_count == 2,
+                    "new thread pool should report all workers as idle") != SUCCESS ||
+        assert_true(stats.queue_length == 0,
+                    "new thread pool should start with empty queue") != SUCCESS ||
+        assert_true(stats.queue_capacity == 8,
+                    "thread pool should report queue capacity") != SUCCESS) {
+        thread_pool_shutdown(&pool);
         pthread_mutex_destroy(&state.mutex);
         return EXIT_FAILURE;
     }
@@ -102,10 +120,36 @@ int main(void) {
     }
 
     usleep(50000);
+    if (assert_true(thread_pool_get_stats(&pool, &stats) == SUCCESS,
+                    "thread_pool_get_stats should succeed while jobs are active") != SUCCESS ||
+        assert_true(stats.worker_count == 1,
+                    "small thread pool should report one worker") != SUCCESS ||
+        assert_true(stats.busy_worker_count == 1,
+                    "active worker should be counted as busy") != SUCCESS ||
+        assert_true(stats.idle_worker_count == 0,
+                    "busy single worker leaves no idle workers") != SUCCESS) {
+        thread_pool_shutdown(&pool);
+        pthread_mutex_destroy(&state.mutex);
+        return EXIT_FAILURE;
+    }
+
     if (assert_true(thread_pool_submit(&pool, 20) == SUCCESS,
                     "second job should occupy the bounded queue") != SUCCESS ||
         assert_true(thread_pool_submit(&pool, 30) == FAILURE,
                     "third job should fail immediately when queue is full") != SUCCESS) {
+        thread_pool_shutdown(&pool);
+        pthread_mutex_destroy(&state.mutex);
+        return EXIT_FAILURE;
+    }
+
+    if (assert_true(thread_pool_get_stats(&pool, &stats) == SUCCESS,
+                    "thread_pool_get_stats should include queue pressure") != SUCCESS ||
+        assert_true(stats.queue_length == 1,
+                    "bounded queue should report one waiting job") != SUCCESS ||
+        assert_true(stats.queue_capacity == 1,
+                    "small thread pool queue capacity should be one") != SUCCESS ||
+        assert_true(stats.available_queue_slots == 0,
+                    "full queue should report zero available slots") != SUCCESS) {
         thread_pool_shutdown(&pool);
         pthread_mutex_destroy(&state.mutex);
         return EXIT_FAILURE;

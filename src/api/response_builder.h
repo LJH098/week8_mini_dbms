@@ -1,6 +1,7 @@
 #ifndef RESPONSE_BUILDER_H
 #define RESPONSE_BUILDER_H
 
+#include "thread_pool.h"
 #include "executor_result.h"
 
 /*
@@ -17,7 +18,7 @@ int build_json_error_response(int status_code, const char *message, char **out_b
 /*
  * 상태 확인용 JSON body를 생성한다.
  */
-int build_health_json_response(char **out_body);
+int build_health_json_response(const ThreadPoolStats *stats, char **out_body);
 
 /*
  * JSON body를 완전한 HTTP/1.1 응답 문자열로 감싼다.

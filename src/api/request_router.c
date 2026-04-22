@@ -114,8 +114,16 @@ static int extract_sql_from_json(const char *body, char **out_sql) {
     return FAILURE;
 }
 
-static int handle_health_request(int *out_status_code, char **out_body) {
-    if (build_health_json_response(out_body) != SUCCESS) {
+static int handle_health_request(const RequestRouterContext *context,
+                                 int *out_status_code, char **out_body) {
+    ThreadPoolStats stats;
+
+    if (context == NULL || context->thread_pool == NULL ||
+        thread_pool_get_stats(context->thread_pool, &stats) != SUCCESS) {
+        return FAILURE;
+    }
+
+    if (build_health_json_response(&stats, out_body) != SUCCESS) {
         return FAILURE;
     }
 
@@ -123,13 +131,15 @@ static int handle_health_request(int *out_status_code, char **out_body) {
     return SUCCESS;
 }
 
-static int handle_query_request(DbEngine *engine, const HttpRequest *request,
+static int handle_query_request(const RequestRouterContext *context,
+                                const HttpRequest *request,
                                 int *out_status_code, char **out_body) {
     DbResult result;
     char *sql;
     int status;
 
-    if (engine == NULL || request == NULL || out_status_code == NULL ||
+    if (context == NULL || context->engine == NULL || request == NULL ||
+        out_status_code == NULL ||
         out_body == NULL) {
         return FAILURE;
     }
@@ -143,7 +153,7 @@ static int handle_query_request(DbEngine *engine, const HttpRequest *request,
     }
 
     db_result_init(&result);
-    status = execute_query_with_lock(engine, sql, &result);
+    status = execute_query_with_lock(context->engine, sql, &result);
     free(sql);
 
     if (status != SUCCESS) {
@@ -163,9 +173,9 @@ static int handle_query_request(DbEngine *engine, const HttpRequest *request,
     return status;
 }
 
-int route_request(DbEngine *engine, const HttpRequest *request,
+int route_request(const RequestRouterContext *context, const HttpRequest *request,
                   int *out_status_code, char **out_body) {
-    if (engine == NULL || request == NULL || out_status_code == NULL ||
+    if (context == NULL || request == NULL || out_status_code == NULL ||
         out_body == NULL) {
         return FAILURE;
     }
@@ -181,7 +191,7 @@ int route_request(DbEngine *engine, const HttpRequest *request,
             *out_status_code = 405;
             return SUCCESS;
         }
-        return handle_health_request(out_status_code, out_body);
+        return handle_health_request(context, out_status_code, out_body);
     }
 
     if (utils_equals_ignore_case(request->path, "/query")) {
@@ -193,7 +203,7 @@ int route_request(DbEngine *engine, const HttpRequest *request,
             *out_status_code = 405;
             return SUCCESS;
         }
-        return handle_query_request(engine, request, out_status_code, out_body);
+        return handle_query_request(context, request, out_status_code, out_body);
     }
 
     if (build_json_error_response(404, "Route not found.", out_body) != SUCCESS) {

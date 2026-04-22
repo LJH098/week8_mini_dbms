@@ -17,7 +17,15 @@ static void *thread_pool_worker_main(void *arg) {
     free(arg);
 
     while (queue_pop(&pool->queue, &client_fd) == SUCCESS) {
+        pthread_mutex_lock(&pool->queue.mutex);
+        pool->active_worker_count++;
+        pthread_mutex_unlock(&pool->queue.mutex);
+
         pool->handler(client_fd, pool->handler_context);
+
+        pthread_mutex_lock(&pool->queue.mutex);
+        pool->active_worker_count--;
+        pthread_mutex_unlock(&pool->queue.mutex);
     }
 
     return NULL;
@@ -77,6 +85,22 @@ int thread_pool_submit(ThreadPool *pool, int client_fd) {
     return queue_push(&pool->queue, client_fd);
 }
 
+int thread_pool_get_stats(ThreadPool *pool, ThreadPoolStats *out_stats) {
+    if (pool == NULL || out_stats == NULL) {
+        return FAILURE;
+    }
+
+    pthread_mutex_lock(&pool->queue.mutex);
+    out_stats->worker_count = pool->worker_count;
+    out_stats->busy_worker_count = pool->active_worker_count;
+    out_stats->idle_worker_count = pool->worker_count - pool->active_worker_count;
+    out_stats->queue_length = pool->queue.count;
+    out_stats->queue_capacity = pool->queue.capacity;
+    out_stats->available_queue_slots = pool->queue.capacity - pool->queue.count;
+    pthread_mutex_unlock(&pool->queue.mutex);
+    return SUCCESS;
+}
+
 void thread_pool_shutdown(ThreadPool *pool) {
     int i;
 
@@ -94,5 +118,6 @@ void thread_pool_shutdown(ThreadPool *pool) {
     free(pool->workers);
     pool->workers = NULL;
     pool->worker_count = 0;
+    pool->active_worker_count = 0;
     queue_destroy(&pool->queue);
 }

@@ -223,12 +223,21 @@ int build_json_error_response(int status_code, const char *message, char **out_b
     return SUCCESS;
 }
 
-int build_health_json_response(char **out_body) {
-    if (out_body == NULL) {
+int build_health_json_response(const ThreadPoolStats *stats, char **out_body) {
+    char buffer[256];
+
+    if (stats == NULL || out_body == NULL) {
         return FAILURE;
     }
 
-    *out_body = utils_strdup("{\"status\":\"ok\"}");
+    snprintf(buffer, sizeof(buffer),
+             "{\"status\":\"ok\",\"worker_count\":%d,\"busy_workers\":%d,"
+             "\"idle_workers\":%d,\"queue_length\":%d,\"queue_capacity\":%d,"
+             "\"available_queue_slots\":%d}",
+             stats->worker_count, stats->busy_worker_count,
+             stats->idle_worker_count, stats->queue_length,
+             stats->queue_capacity, stats->available_queue_slots);
+    *out_body = utils_strdup(buffer);
     return *out_body == NULL ? FAILURE : SUCCESS;
 }
 
